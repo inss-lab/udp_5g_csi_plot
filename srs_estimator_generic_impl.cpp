@@ -50,7 +50,9 @@ using namespace srsran;
 #include <iomanip>
 #include <string>
 #include <iostream>
-
+#include <map>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -206,7 +208,50 @@ private:
 
 // Global instance of the SCTP transmitter.
 // It will be initialized once, starting the background thread.
-SctpTransmitter sctp_transmitter("127.0.0.1", 5000);
+// Change ip and port at /home/inss/srs_scripts/my_config
+std::map<std::string, std::string> load_config_file(const std::string& filename)
+{
+    std::map<std::string, std::string> result;
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Warning: Cannot open config file: " << filename << std::endl;
+        return result;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream is_line(line);
+        std::string key;
+        if (std::getline(is_line, key, '=')) {
+            std::string value;
+            if (std::getline(is_line, value)) {
+                result[key] = value;
+            }
+        }
+    }
+    return result;
+}
+std::string get_ip_from_config()
+{
+    auto cfg = load_config_file("/home/inss/srs_scripts/my_config");
+    if (cfg.count("ip")) {
+        return cfg["ip"];
+    }
+    return "127.0.0.1";
+}
+
+uint16_t get_port_from_config()
+{
+    auto cfg = load_config_file("/home/inss/srs_scripts/my_config");
+    if (cfg.count("port")) {
+        return static_cast<uint16_t>(std::stoi(cfg["port"]));
+    }
+    return 5000;
+}
+std::string ip = get_ip_from_config();
+uint16_t port = get_port_from_config();
+
+SctpTransmitter sctp_transmitter(ip.c_str(), port);
 
 static void dump_csi_bin(srsran::span<cf_t> csi, unsigned rx_port, unsigned tx_port)
 {
