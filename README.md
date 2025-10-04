@@ -3,6 +3,7 @@ This repository is about how to transfer CSI (Channel State Information) and TA 
 ## Files
 - srs_estimator_generic_impl.cpp
   Handling physical layer to send CSI and TA offset to another host, using UDP protocol by minor change, please see the comment on line 119-120 for details.
+  Before starting this project, go to /home/inss/srs_scripts/my_config and change IP and port to your own PC.
 - csiplot_udp.py
   Receiver script thst collects transmitted CSI and TA offset in real time.
 ## Usage
