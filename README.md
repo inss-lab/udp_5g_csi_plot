@@ -8,7 +8,7 @@ This repository is about how to transfer CSI (Channel State Information) and TA 
   Before starting this project, go to /home/inss/srs_scripts/my_config and change IP and port to your own PC.
 - csiplot_udp.py
   
-  Receiver script thst collects transmitted CSI and TA offset in real time.
+  Receiver script that collects transmitted CSI and TA offset in real time and saves data.
 - plot_csi_file.py
 
   Using saved data to draw graphs again.
