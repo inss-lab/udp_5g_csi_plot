@@ -21,6 +21,9 @@ def load_csi_from_file(npz_file):
     return rx_port_arr, tx_port_arr, ta_us_arr, csi_arr
 
 def simulate_data_feed_multiple(files, folder="csi_data_logs", feed_interval=0.05, loop=False):
+    """
+    Simulate real-time data feeding by reading pre-recorded CSI data files.
+    """
     global latest_csi_data, ta_history, rx_ports
 
     while True:
@@ -45,7 +48,7 @@ def simulate_data_feed_multiple(files, folder="csi_data_logs", feed_interval=0.0
             print("Finished playing all files.")
             break
 
-# 绘图相关变量
+# --- Plotting related globals ---
 fig = None
 axs = {}
 lines = {}
@@ -53,7 +56,7 @@ lines = {}
 def setup_plots():
     global fig, axs, lines
 
-    # 等待rx_ports至少有内容
+    # Wait until at least one RX port is available
     while not rx_ports:
         time.sleep(0.1)
 
@@ -141,17 +144,19 @@ def update_plots(frame):
 if __name__ == "__main__":
     folder = "csi_data_logs"
     files = sorted(f for f in os.listdir(folder) if f.endswith('.npz'))
+
     if not files:
         print("No data files found in folder:", folder)
         exit(1)
 
-    # 先加载第一个文件中的rx_port，方便初始化plot
+    # Load the first file to initialize rx_ports for plot setup
     first_file = os.path.join(folder, files[0])
     rx_port_arr, _, _, _ = load_csi_from_file(first_file)
+
     with data_lock:
         rx_ports.update(set(rx_port_arr.tolist()))
 
-    # 启动线程，循环读取所有文件数据
+    # Start a thread to simulate real-time feeding of data from all files
     t = threading.Thread(target=simulate_data_feed_multiple, args=(files, folder, 0.05, False), daemon=True)
     t.start()
 
