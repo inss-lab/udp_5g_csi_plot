@@ -1,12 +1,10 @@
-import socket
-import struct
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import threading
 from collections import deque
-import os
 import time
+import os
 
 # --- Global Data Structures ---
 data_lock = threading.Lock()
@@ -14,89 +12,53 @@ latest_csi_data = {}
 ta_history = deque()
 rx_ports = set()
 
-# Data saving setup
-output_dir = "csi_data_logs"
-os.makedirs(output_dir, exist_ok=True)
-save_buffer = []
-SAVE_EVERY_N = 1000
+def load_csi_from_file(npz_file):
+    data = np.load(npz_file, allow_pickle=True)
+    rx_port_arr = data['rx_port']
+    tx_port_arr = data['tx_port']
+    ta_us_arr = data['ta_us']
+    csi_arr = data['csi']
+    return rx_port_arr, tx_port_arr, ta_us_arr, csi_arr
 
-# --- Matplotlib Globals ---
+def simulate_data_feed_multiple(files, folder="csi_data_logs", feed_interval=0.05, loop=False):
+    global latest_csi_data, ta_history, rx_ports
+
+    while True:
+        for filename in files:
+            filepath = os.path.join(folder, filename)
+            rx_port_arr, tx_port_arr, ta_us_arr, csi_arr = load_csi_from_file(filepath)
+            print(f"Playing file {filename}, {len(rx_port_arr)} samples")
+
+            for i in range(len(rx_port_arr)):
+                rx_port = int(rx_port_arr[i])
+                ta_us = ta_us_arr[i]
+                csi = csi_arr[i]
+
+                with data_lock:
+                    latest_csi_data[rx_port] = csi
+                    ta_history.append(ta_us)
+                    rx_ports.add(rx_port)
+
+                time.sleep(feed_interval)
+
+        if not loop:
+            print("Finished playing all files.")
+            break
+
+# 绘图相关变量
 fig = None
 axs = {}
 lines = {}
 
-
-def recv_csi_udp(listen_ip="0.0.0.0", listen_port=5000):
-    global latest_csi_data, rx_ports, ta_history, save_buffer
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((listen_ip, listen_port))
-
-    print(f"Listening(UDP) on {listen_ip}:{listen_port} ...")
-
-    while True:
-        data, addr = sock.recvfrom(8192)
-        if not data:
-            break
-
-        floats = np.frombuffer(data, dtype=np.float32)
-        if len(floats) < 3:
-            continue
-
-        rx_port = int(floats[0])
-        tx_port = int(floats[1])
-        time_alignment_s = floats[2]
-
-        csi_complex = floats[3:].reshape(-1, 2)
-        csi = csi_complex[:, 0] + 1j * csi_complex[:, 1]
-
-        with data_lock:
-            latest_csi_data[rx_port] = csi
-            ta_history.append(time_alignment_s * 1e6)  # microseconds
-            rx_ports.add(rx_port)
-
-        print(f"RX={rx_port}, TX={tx_port}, TA={time_alignment_s * 1e6:.3f} µs, CSI_len={len(csi)}")
-
-        # --- Save to buffer ---
-        save_buffer.append({
-            "rx_port": rx_port,
-            "tx_port": tx_port,
-            "ta_us": time_alignment_s * 1e6,
-            "csi": csi
-        })
-
-        # --- Periodically save to file ---
-        if len(save_buffer) >= SAVE_EVERY_N:
-            timestamp = int(time.time())
-            filename = os.path.join(output_dir, f"csi_snapshot_{timestamp}.npz")
-
-            # Convert to arrays
-            rx_ports_arr = np.array([d['rx_port'] for d in save_buffer])
-            tx_ports_arr = np.array([d['tx_port'] for d in save_buffer])
-            ta_arr = np.array([d['ta_us'] for d in save_buffer])
-            csi_arr = np.array([d['csi'] for d in save_buffer])
-
-            np.savez_compressed(filename,
-                                rx_port=rx_ports_arr,
-                                tx_port=tx_ports_arr,
-                                ta_us=ta_arr,
-                                csi=csi_arr)
-            print(f"[Saved] {filename}, {len(save_buffer)} entries")
-            save_buffer.clear()
-
-    sock.close()
-
-
 def setup_plots():
     global fig, axs, lines
 
+    # 等待rx_ports至少有内容
     while not rx_ports:
-        threading.Event().wait(0.5)
+        time.sleep(0.1)
 
     n_rx = len(rx_ports)
     rx_port_list = sorted(list(rx_ports))
-
-    print(f"Setting up plots for RX ports: {rx_port_list}")
 
     fig = plt.figure(figsize=(4 * (n_rx + 1), 8))
     gs = fig.add_gridspec(2, n_rx + 1)
@@ -133,7 +95,6 @@ def setup_plots():
     lines['ta'] = l_ta
 
     plt.tight_layout(pad=2.0)
-
 
 def update_plots(frame):
     global latest_csi_data, ta_history, lines, axs
@@ -177,12 +138,23 @@ def update_plots(frame):
 
     return updated_lines
 
-
 if __name__ == "__main__":
-    t = threading.Thread(target=recv_csi_udp, args=("0.0.0.0", 5000), daemon=True)
+    folder = "csi_data_logs"
+    files = sorted(f for f in os.listdir(folder) if f.endswith('.npz'))
+    if not files:
+        print("No data files found in folder:", folder)
+        exit(1)
+
+    # 先加载第一个文件中的rx_port，方便初始化plot
+    first_file = os.path.join(folder, files[0])
+    rx_port_arr, _, _, _ = load_csi_from_file(first_file)
+    with data_lock:
+        rx_ports.update(set(rx_port_arr.tolist()))
+
+    # 启动线程，循环读取所有文件数据
+    t = threading.Thread(target=simulate_data_feed_multiple, args=(files, folder, 0.05, False), daemon=True)
     t.start()
 
     setup_plots()
     ani = FuncAnimation(fig, update_plots, interval=50, blit=False)
     plt.show()
-
